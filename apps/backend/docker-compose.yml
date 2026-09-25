@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: egt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: egt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-egt_dev_password}
+      POSTGRES_DB: egt
+    ports:
+      - "5432:5432"
+    volumes:
+      - egt-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U egt -d egt"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: .
+    container_name: egt-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://egt:${POSTGRES_PASSWORD:-egt_dev_password}@postgres:5432/egt?schema=public
+      DOCUMENT_STORAGE_DIR: /var/lib/egt-documents
+    ports:
+      - "3000:3000"
+    volumes:
+      - egt-documents:/var/lib/egt-documents
+
+volumes:
+  egt-pgdata:
+  egt-documents:

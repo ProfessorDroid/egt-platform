@@ -1,0 +1,21 @@
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+.idea/
+*.iml
+
+# Signing secrets — NEVER commit
+android/key.properties
+android/app/*.jks
+android/app/*.keystore
+ios/*.mobileprovision
+
+# Firebase config with real keys — NEVER commit
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+
+# Env
+.env
+*.env

@@ -1,0 +1,1 @@
+{"collection":"@nestjs/schematics","compilerOptions":{"assets":["**/*.json"],"declaration":false,"deleteOutDir":true},"entryFile":"main","sourceRoot":"src"}

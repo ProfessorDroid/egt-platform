@@ -1,0 +1,44 @@
+# EGT staging — free tier blueprint (Render web service + static admin).
+# Database: Neon free PostgreSQL (created separately, URL pasted at deploy time).
+# Deploy: Render dashboard → New → Blueprint → connect the repo containing this file.
+# Full steps: docs/hosting-render-neon.md
+#
+# Free-tier caveats (staging only, never production):
+# - The API sleeps after 15 min without traffic; first request after idle
+#   takes ~30-60s (cold start).
+# - The filesystem is ephemeral: uploaded documents vanish on redeploy/restart.
+# - Neon free: 0.5 GB storage, fine for staging.
+
+services:
+  - type: web
+    name: egt-api-staging
+    runtime: docker
+    plan: free
+    dockerfilePath: ./apps/backend/Dockerfile
+    dockerContext: ./apps/backend
+    # Render injects PORT automatically; the API reads it from the environment.
+    # The Dockerfile CMD runs `prisma migrate deploy` before starting Node.
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # <-- paste the Neon DIRECT (non-pooled) connection string here
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: DOCUMENT_SIGNING_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://egt-admin-staging.onrender.com
+      - key: DOCUMENT_STORAGE_DIR
+        value: /var/lib/egt-documents
+
+  - type: static
+    name: egt-admin-staging
+    plan: free
+    buildCommand: cd apps/admin && npm ci --no-audit --no-fund && npm run build
+    staticPublishPath: apps/admin/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://egt-api-staging.onrender.com/api/v1

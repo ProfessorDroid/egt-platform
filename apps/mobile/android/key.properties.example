@@ -1,0 +1,6 @@
+# Release signing template. Copy to android/key.properties (git-ignored)
+# and fill in on the build machine. NEVER commit the real file.
+storePassword=
+keyPassword=
+keyAlias=egt-release
+storeFile=/absolute/path/to/egt-release.jks

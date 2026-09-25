@@ -1,0 +1,856 @@
+// EGT backend — Prisma schema (PostgreSQL)
+// Ownership: apps/backend. Migrated with `prisma migrate dev`.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- identities
+enum RoleName {
+  buyer
+  supplier
+  staff
+  admin
+}
+
+model Role {
+  id          String      @id @default(uuid())
+  name        RoleName    @unique
+  description String?
+  users       User[]
+  permissions RolePermission[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Permission {
+  id          String      @id @default(uuid())
+  key         String      @unique // e.g. "rfq.approve", "admin.users.read"
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  passwordHash     String    // argon2id
+  fullName         String
+  phone            String?
+  role             Role      @relation(fields: [roleId], references: [id])
+  roleId           String
+  isActive         Boolean   @default(true)
+  emailVerifiedAt  DateTime?
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  company          Company?  @relation(fields: [companyId], references: [id])
+  companyId        String?
+  createdBy        String?
+  updatedBy        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  sessions         Session[]
+  refreshTokens    RefreshToken[]
+  deviceTokens     DeviceToken[]
+  notifPrefs       NotificationPreference[]
+  conversations    ConversationParticipant[]
+  messagesSent     Message[]              @relation("MessageSender")
+  auditLogs        AuditLog[]             @relation("AuditActor")
+  supportTickets   SupportTicket[]        @relation("TicketRequester")
+  assignedTickets  SupportTicket[]        @relation("TicketAssignee")
+  suppliersOwned   Supplier[]            @relation("SupplierOwner")
+  rfqs             Rfq[]                  @relation("RfqBuyer")
+  orders           Order[]                @relation("OrderBuyer")
+  privateLabelRequests PrivateLabelRequest[]
+  documentsUploaded Document[]
+
+  @@index([email])
+  @@index([roleId])
+  @@index([deletedAt])
+}
+
+// One login session per device login; logout-all revokes every session.
+model Session {
+  id         String    @id @default(uuid())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  userAgent  String?
+  ipAddress  String?
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  revokedReason String?
+
+  refreshTokens RefreshToken[]
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Refresh token family for rotation + reuse detection.
+// Each token row is hashed (never stored raw). On reuse of a superseded
+// token the whole family is revoked (session compromise).
+model RefreshToken {
+  id          String    @id @default(uuid())
+  familyId    String    // groups all rotations of one session chain
+  tokenHash   String    @unique // sha256 of the raw token
+  session     Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId   String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  issuedAt    DateTime  @default(now())
+  expiresAt   DateTime
+  rotatedAt   DateTime? // set when this token was exchanged for a new one
+  revokedAt   DateTime?
+  reusedAt    DateTime? // set when a rotated token was presented again
+
+  @@index([familyId])
+  @@index([sessionId])
+  @@index([expiresAt])
+}
+
+model VerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  purpose   VerificationPurpose
+  tokenHash String    @unique // sha256 of raw token
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum VerificationPurpose {
+  email_verification
+  password_reset
+}
+
+// ---------------------------------------------------------------- companies
+model Company {
+  id          String    @id @default(uuid())
+  name        String
+  type        CompanyType @default(buyer)
+  country    String?
+  city        String?
+  website     String?
+  taxId       String?   // GST etc. — never published, staff-only
+  isVerified  Boolean   @default(false)
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  users      User[]
+  addresses  Address[]
+  suppliers  Supplier[]
+  rfqs       Rfq[]
+  orders     Order[]
+}
+
+enum CompanyType {
+  buyer
+  supplier
+  both
+}
+
+model Address {
+  id          String   @id @default(uuid())
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId   String
+  label       String   @default("Head office")
+  line1       String
+  line2       String?
+  city        String
+  state       String?
+  postalCode  String?
+  country     String
+  isDefault   Boolean  @default(false)
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  @@index([companyId])
+}
+
+// ---------------------------------------------------------------- catalogue
+model Category {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  slug        String     @unique
+  description String?
+  sortOrder   Int        @default(0)
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  products Product[]
+}
+
+// Only the 16 site-audited products are seeded. No prices published.
+model Product {
+  id             String    @id @default(uuid())
+  name           String
+  slug           String    @unique
+  category       Category  @relation(fields: [categoryId], references: [id])
+  categoryId     String
+  shortDescription String?
+  orderVolume    String?   // MOQ-style figure from the live site, verbatim
+  expressSample  Boolean   @default(true)
+  wholesaleMarginBadge Boolean @default(true)
+  isFeatured     Boolean   @default(true)
+  isActive       Boolean   @default(true)
+  sortOrder      Int       @default(0)
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  images         ProductImage[]
+  specifications ProductSpecification[]
+  rfqItems       RfqItem[]
+  quoteItems     QuoteItem[]
+  orderItems     OrderItem[]
+  supplierProducts SupplierProduct[]
+
+  @@index([categoryId])
+  @@index([slug])
+  @@index([deletedAt])
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  url       String   // site-asset path or CDN URL
+  alt       String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+}
+
+model ProductSpecification {
+  id        String   @id @default(uuid())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  text      String   // verbatim spec bullet from the live site
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+}
+
+// ---------------------------------------------------------------- suppliers
+enum SupplierStatus {
+  pending_verification
+  verified
+  suspended
+  rejected
+}
+
+model Supplier {
+  id          String         @id @default(uuid())
+  company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId   String         @unique
+  owner       User           @relation("SupplierOwner", fields: [ownerId], references: [id])
+  ownerId     String
+  status      SupplierStatus @default(pending_verification)
+  capabilities String?
+  createdBy   String?
+  updatedBy   String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?
+
+  products SupplierProduct[]
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+enum SupplierProductStatus {
+  pending_review
+  approved
+  changes_required
+  rejected
+}
+
+// Never auto-published: requires staff/admin approval transition.
+model SupplierProduct {
+  id              String               @id @default(uuid())
+  supplier        Supplier             @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplierId      String
+  product         Product?             @relation(fields: [productId], references: [id])
+  productId       String?
+  customName      String?
+  customDescription String?
+  status          SupplierProductStatus @default(pending_review)
+  reviewNote      String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  createdBy       String?
+  updatedBy       String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  deletedAt       DateTime?
+
+  @@index([supplierId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------- RFQs
+// Human-readable IDs are transactional yearly-sequential: EGT-RFQ-2026-000001.
+// Generated from RfqSequence with SELECT ... FOR UPDATE inside the RFQ create
+// transaction — no gaps on retry-safe insert.
+model RfqSequence {
+  year    Int @id
+  nextVal Int @default(1)
+}
+
+// Yearly-sequential document numbers for orders, shipments, support tickets.
+model OrderSequence {
+  year    Int @id
+  nextVal Int @default(1)
+}
+
+model ShipmentSequence {
+  year    Int @id
+  nextVal Int @default(1)
+}
+
+model TicketSequence {
+  year    Int @id
+  nextVal Int @default(1)
+}
+
+enum RfqStatus {
+  submitted
+  under_review
+  sourcing
+  supplier_matched
+  sample_discussion
+  quotation_ready
+  buyer_action_required
+  approved
+  order_processing
+  completed
+  closed
+}
+
+model Rfq {
+  id             String    @id @default(uuid())
+  rfqNumber      String    @unique // EGT-RFQ-2026-000001
+  buyer          User      @relation("RfqBuyer", fields: [buyerId], references: [id])
+  buyerId        String
+  company        Company?  @relation(fields: [companyId], references: [id])
+  companyId      String?
+  status         RfqStatus @default(submitted)
+  // requirement fields (mirror the quote.php form)
+  contactName    String
+  contactEmail   String
+  contactPhone   String
+  destinationCountry String
+  destinationCity    String?
+  deliveryAddress    String?
+  shippingPreference String? // buyer_freight | egt_turnkey_freight
+  currency       String?   @default("USD")
+  budget         Decimal?  @db.Decimal(18, 2)
+  targetPrice    Decimal?  @db.Decimal(18, 2)
+  privateLabel   Boolean   @default(false)
+  packagingPreference String?
+  requirementDetails String
+  statusChangedAt DateTime @default(now())
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  items       RfqItem[]
+  documents   RfqDocument[]
+  quotes      Quote[]
+  orders      Order[]
+  privateLabelRequest PrivateLabelRequest?
+  conversations Conversation[]
+
+  @@index([buyerId])
+  @@index([status])
+  @@index([rfqNumber])
+  @@index([deletedAt])
+}
+
+model RfqItem {
+  id            String   @id @default(uuid())
+  rfq           Rfq      @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  rfqId         String
+  product       Product? @relation(fields: [productId], references: [id])
+  productId     String?
+  customName    String?  // for "Not listed? We source it"
+  customDetails String?
+  quantity      Decimal  @db.Decimal(18, 4)
+  unit          String   @default("units")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([rfqId])
+}
+
+// Private-label / OEM request flow (oem-private-label.php currently 500 on
+// site; statuses are forward-only here).
+enum PrivateLabelStatus {
+  submitted
+  design_review
+  sample
+  approval
+  production
+  completed
+}
+
+model PrivateLabelRequest {
+  id             String            @id @default(uuid())
+  rfq            Rfq               @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  rfqId          String            @unique
+  requester      User              @relation(fields: [requesterId], references: [id])
+  requesterId    String
+  status         PrivateLabelStatus @default(submitted)
+  brandName      String?
+  designNotes    String?
+  statusChangedAt DateTime         @default(now())
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  deletedAt      DateTime?
+
+  @@index([requesterId])
+  @@index([status])
+}
+
+model RfqDocument {
+  id           String   @id @default(uuid())
+  rfq          Rfq      @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  rfqId        String
+  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId   String
+  createdAt    DateTime @default(now())
+
+  @@unique([rfqId, documentId])
+  @@index([rfqId])
+}
+
+// ---------------------------------------------------------------- quotes
+enum QuoteStatus {
+  draft
+  sent
+  revision_requested
+  accepted
+  rejected
+  expired
+  withdrawn
+}
+
+model Quote {
+  id             String      @id @default(uuid())
+  rfq            Rfq         @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  rfqId          String
+  status         QuoteStatus @default(draft)
+  currency       String      @default("USD")
+  subtotal       Decimal     @db.Decimal(18, 2)
+  shippingCost   Decimal?    @db.Decimal(18, 2)
+  total          Decimal     @db.Decimal(18, 2)
+  incoterm       String?     // FOB | CIF | DDP | EXW
+  validUntil     DateTime
+  notes          String?
+  sentAt         DateTime?
+  acceptedAt     DateTime?
+  acceptedBy     String?
+  rejectionReason String?
+  createdBy      String?
+  updatedBy      String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  items QuoteItem[]
+
+  orders Order[]
+
+  @@index([rfqId])
+  @@index([status])
+}
+
+model QuoteItem {
+  id          String   @id @default(uuid())
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quoteId     String
+  product     Product? @relation(fields: [productId], references: [id])
+  productId   String?
+  description String
+  quantity    Decimal  @db.Decimal(18, 4)
+  unit        String   @default("units")
+  unitPrice   Decimal  @db.Decimal(18, 4)
+  lineTotal   Decimal  @db.Decimal(18, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([quoteId])
+}
+
+// ---------------------------------------------------------------- orders
+enum OrderStatus {
+  pending
+  confirmed
+  in_production
+  ready_to_ship
+  shipped
+  delivered
+  cancelled
+}
+
+model Order {
+  id           String      @id @default(uuid())
+  orderNumber  String      @unique // EGT-ORD-2026-000001
+  rfq          Rfq?        @relation(fields: [rfqId], references: [id])
+  rfqId        String?
+  quote        Quote?      @relation(fields: [quoteId], references: [id])
+  quoteId      String?
+  buyer        User        @relation("OrderBuyer", fields: [buyerId], references: [id])
+  buyerId      String
+  company      Company?    @relation(fields: [companyId], references: [id])
+  companyId    String?
+  status       OrderStatus @default(pending)
+  currency     String      @default("USD")
+  total        Decimal     @db.Decimal(18, 2)
+  createdBy    String?
+  updatedBy    String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  deletedAt    DateTime?
+
+  items       OrderItem[]
+  shipments   Shipment[]
+  conversations Conversation[]
+
+  @@index([buyerId])
+  @@index([status])
+  @@index([deletedAt])
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId     String
+  product     Product? @relation(fields: [productId], references: [id])
+  productId   String?
+  description String
+  quantity    Decimal  @db.Decimal(18, 4)
+  unit        String   @default("units")
+  unitPrice   Decimal  @db.Decimal(18, 4)
+  lineTotal   Decimal  @db.Decimal(18, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orderId])
+}
+
+// ---------------------------------------------------------------- shipments
+enum ShipmentStatus {
+  booked
+  picked_up
+  in_transit
+  customs
+  out_for_delivery
+  delivered
+  exception
+}
+
+model Shipment {
+  id            String         @id @default(uuid())
+  shipmentNumber String        @unique // EGT-SHP-2026-000001
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId       String
+  status        ShipmentStatus @default(booked)
+  carrier       String?
+  trackingRef   String?
+  originPort    String?
+  destinationPort String?
+  estimatedDelivery DateTime?
+  createdBy     String?
+  updatedBy     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  deletedAt     DateTime?
+
+  events ShipmentEvent[]
+  conversations Conversation[]
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model ShipmentEvent {
+  id          String   @id @default(uuid())
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  shipmentId  String
+  status      ShipmentStatus
+  location    String?
+  note        String?
+  occurredAt  DateTime @default(now())
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  @@index([shipmentId])
+  @@index([occurredAt])
+}
+
+// ---------------------------------------------------------------- documents
+// Stored OUTSIDE the web root in DOCUMENT_STORAGE_DIR. Filenames are random
+// UUIDs; downloads go through signed temporary URLs only.
+enum DocumentKind {
+  rfq_attachment
+  quote_attachment
+  order_document
+  shipment_document
+  compliance
+  other
+}
+
+model Document {
+  id             String       @id @default(uuid())
+  kind           DocumentKind @default(other)
+  originalName   String
+  storedFilename String       @unique // uuid + ext, random server-side
+  mimeType       String
+  sizeBytes      Int
+  checksumSha256 String?
+  uploadedBy     User         @relation(fields: [uploadedById], references: [id])
+  uploadedById   String
+  // polymorphic owner for authorization (one of rfq/order/shipment/ticket)
+  ownerType      String       // "rfq" | "order" | "shipment" | "support_ticket"
+  ownerId        String
+  createdAt      DateTime     @default(now())
+  deletedAt      DateTime?
+
+  rfqLinks RfqDocument[]
+
+  @@index([ownerType, ownerId])
+  @@index([uploadedById])
+}
+
+// ---------------------------------------------------------------- notifications
+enum NotificationEventType {
+  rfq_status_changed
+  quote_available
+  quote_revision_requested
+  order_status_changed
+  shipment_update
+  document_uploaded
+  security_alert
+  ticket_reply
+  message_received
+}
+
+model Notification {
+  id        String               @id @default(uuid())
+  userId    String
+  eventType NotificationEventType
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime             @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+}
+
+model DeviceToken {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  platform   String   // "android" | "ios" | "web"
+  token      String   @unique
+  isActive   Boolean  @default(true)
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model NotificationPreference {
+  id        String               @id @default(uuid())
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  eventType NotificationEventType
+  enabled   Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@unique([userId, eventType])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------- conversations
+enum ConversationKind {
+  rfq
+  order
+  shipment
+  support_ticket
+}
+
+model Conversation {
+  id        String           @id @default(uuid())
+  kind      ConversationKind
+  rfq       Rfq?             @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  rfqId     String?
+  order     Order?           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId   String?
+  shipment  Shipment?        @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  shipmentId String?
+  ticket    SupportTicket?   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId  String?
+  subject   String?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([rfqId])
+  @@index([orderId])
+  @@index([shipmentId])
+  @@index([ticketId])
+}
+
+model ConversationParticipant {
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  joinedAt       DateTime     @default(now())
+  lastReadAt     DateTime?
+
+  @@id([conversationId, userId])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  sender         User         @relation("MessageSender", fields: [senderId], references: [id])
+  senderId       String
+  body           String
+  createdAt      DateTime     @default(now())
+  deletedAt      DateTime?
+
+  @@index([conversationId, createdAt])
+}
+
+// ---------------------------------------------------------------- support
+enum TicketStatus {
+  open
+  in_progress
+  waiting_on_customer
+  resolved
+  closed
+}
+
+enum TicketPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+model SupportTicket {
+  id           String         @id @default(uuid())
+  ticketNumber String         @unique // EGT-TCK-2026-000001
+  requester    User           @relation("TicketRequester", fields: [requesterId], references: [id])
+  requesterId  String
+  assignee     User?          @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  assigneeId   String?
+  subject      String
+  status       TicketStatus   @default(open)
+  priority     TicketPriority @default(medium)
+  createdBy    String?
+  updatedBy    String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  deletedAt    DateTime?
+
+  conversations Conversation[]
+
+  @@index([requesterId])
+  @@index([status])
+  @@index([assigneeId])
+}
+
+// ---------------------------------------------------------------- audit
+enum AuditAction {
+  user_registered
+  user_login
+  user_login_failed
+  user_logout
+  user_logout_all
+  password_reset_requested
+  password_reset_completed
+  email_verified
+  role_changed
+  rfq_created
+  rfq_status_changed
+  quote_created
+  quote_accepted
+  quote_rejected
+  order_created
+  shipment_created
+  shipment_status_changed
+  document_uploaded
+  document_downloaded
+  supplier_product_reviewed
+  admin_action
+}
+
+model AuditLog {
+  id        String      @id @default(uuid())
+  action    AuditAction
+  actor     User?       @relation("AuditActor", fields: [actorId], references: [id])
+  actorId   String?
+  entityType String?
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime    @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([entityType, entityId])
+}

@@ -1,0 +1,1 @@
+{"compilerOptions":{"allowSyntheticDefaultImports":true,"emitDecoratorMetadata":true,"esModuleInterop":true,"experimentalDecorators":true,"module":"commonjs","moduleResolution":"node","skipLibCheck":true,"strict":false,"target":"ES2021","types":["node","jest"]},"exclude":["node_modules"],"extends":"../tsconfig.json","include":["../src/**/*","./unit/**/*"]}

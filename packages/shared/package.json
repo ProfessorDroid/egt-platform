@@ -1,0 +1,17 @@
+{
+  "description": "Shared TypeScript types for EGT apps, generated from packages/shared/openapi.yaml. Regenerate with npm run generate.",
+  "devDependencies": {
+    "openapi-typescript": "^7.4.0",
+    "typescript": "^5.7.0"
+  },
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "name": "@egt/shared",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "generate": "openapi-typescript openapi.yaml -o src/generated/api.d.ts"
+  },
+  "types": "dist/index.d.ts",
+  "version": "0.1.0"
+}

@@ -1,0 +1,26 @@
+[Unit]
+Description=EGT API (NestJS) - staging
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=egt
+Group=egt
+WorkingDirectory=/opt/egt/api
+EnvironmentFile=/opt/egt/api/.env
+ExecStart=/usr/bin/node dist/main
+Restart=always
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/egt/api /var/lib/egt-documents /var/log/egt-api
+# Logging
+StandardOutput=append:/var/log/egt-api/api.log
+StandardError=append:/var/log/egt-api/api-error.log
+
+[Install]
+WantedBy=multi-user.target
