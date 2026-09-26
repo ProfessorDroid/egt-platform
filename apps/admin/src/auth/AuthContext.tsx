@@ -79,7 +79,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       res = await api.auth.login(email, password);
     } catch (err) {
-      throw new Error(mapError(err).message);
+      const mapped = mapError(err);
+      // On the sign-in screen a 401 means invalid credentials, not an expired session.
+      throw new Error(mapped.status === 401 ? 'Email or password is incorrect.' : mapped.message);
     }
     applyLoginResponse(res, setUser);
     armIdleTimer();
