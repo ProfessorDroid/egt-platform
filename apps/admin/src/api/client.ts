@@ -167,8 +167,18 @@ async function postForm<T>(url: string, form: FormData): Promise<T> {
 
 export const api = {
   auth: {
-    login: (email: string, password: string) =>
-      post<LoginResponse>('/auth/login', { email, password }),
+    login: async (email: string, password: string): Promise<LoginResponse> => {
+      // The API returns tokens flat ({accessToken, refreshToken, ...});
+      // normalize to the {user, tokens} shape the session layer expects.
+      const res = await post<LoginResponse & { accessToken?: string; refreshToken?: string }>(
+        '/auth/login',
+        { email, password },
+      );
+      if (!res.tokens && res.accessToken && res.refreshToken) {
+        res.tokens = { accessToken: res.accessToken, refreshToken: res.refreshToken };
+      }
+      return res as LoginResponse;
+    },
     me: () => get<User>('/auth/me'),
     logout: () => post<{ ok: boolean }>('/auth/logout').catch(() => ({ ok: true })),
     logoutAll: () => post<{ ok: boolean }>('/auth/logout-all'),
