@@ -22,6 +22,7 @@ class ErrorMapper {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.sendTimeout:
         case DioExceptionType.receiveTimeout:
+        case DioExceptionType.transformTimeout:
           return const AppException(AppFailureKind.timeout, 'error_timeout');
         case DioExceptionType.connectionError:
           return const AppException(AppFailureKind.offline, 'error_offline');

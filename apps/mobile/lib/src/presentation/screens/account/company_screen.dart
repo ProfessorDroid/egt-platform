@@ -83,7 +83,7 @@ class _CompanyScreenState extends ConsumerState<CompanyScreen> {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final l10n = context.l10n;
     final company = ref.watch(companyProvider);
 

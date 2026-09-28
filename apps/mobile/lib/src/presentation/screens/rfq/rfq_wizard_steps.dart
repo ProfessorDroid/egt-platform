@@ -32,7 +32,7 @@ List<String> rfqStepTitles(BuildContext context) {
   ];
 }
 
-typedef DraftUpdate = void Function(RfqDraft Function(RfqDraft d));
+typedef DraftUpdate = void Function(void Function(RfqDraft d));
 
 const _units = [
   'kg', 'g', 'MT', 'tons', 'L', 'mL',

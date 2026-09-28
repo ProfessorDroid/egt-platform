@@ -72,7 +72,7 @@ class RfqWizardController extends StateNotifier<RfqWizardState> {
     } catch (_) {}
   }
 
-  void updateDraft(RfqDraft Function(RfqDraft d) fn) {
+  void updateDraft(void Function(RfqDraft d) fn) {
     final draft = state.draft;
     fn(draft);
     state = state.copyWith(draft: draft);

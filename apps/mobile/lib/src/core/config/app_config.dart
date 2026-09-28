@@ -28,7 +28,7 @@ class AppConfig {
 
   factory AppConfig.staging() => const AppConfig(
         flavor: AppFlavor.staging,
-        baseUrl: 'https://staging-api.eaglegoodstrading.com/api/v1',
+        baseUrl: 'https://sukhz-egt-staging-api.hf.space/api/v1',
         enableAnalytics: false,
       );
 

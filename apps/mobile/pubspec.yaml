@@ -23,7 +23,7 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   shared_preferences: ^2.2.3
   # Push (STRUCTURE ONLY — no keys bundled; see docs/mobile-build.md)
-  firebase_core: ^15.1.0
+  firebase_core: ^3.15.2
   firebase_messaging: ^15.1.5
   # Biometric unlock
   local_auth: ^2.1.8
@@ -40,7 +40,7 @@ dependencies:
   # JWT expiry checks (no verification — signature verified server-side)
   jwt_decode: ^0.3.1
   # Formatting
-  intl: ^0.19.0
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
